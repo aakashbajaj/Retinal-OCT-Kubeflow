@@ -1,0 +1,6 @@
+tensorflow
+opencv-python
+tqdm
+google-cloud-storage
+apache_beam
+apache_beam[gcp]

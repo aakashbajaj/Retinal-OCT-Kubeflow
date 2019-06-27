@@ -1,0 +1,94 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    getambassador.io/config: |-
+      ---
+      apiVersion: ambassador/v0
+      kind:  Mapping
+      name: tfserving-predict-mapping-MODEL_NAME
+      prefix: /tfserving/models/MODEL_NAME
+      rewrite: /v1/models/MODEL_NAME:predict
+      method: POST
+      service: MODEL_NAME-service.kubeflow:8500
+      ---
+      apiVersion: ambassador/v0
+      kind:  Mapping
+      name: tfserving-predict-mapping-MODEL_NAME-get
+      prefix: /tfserving/models/MODEL_NAME
+      rewrite: /v1/models/MODEL_NAME
+      method: GET
+      service: MODEL_NAME-service.kubeflow:8500
+    prometheus.io/path: /monitoring/prometheus/metrics
+    prometheus.io/port: "8500"
+    prometheus.io/scrape: "true"
+  labels:
+    app: MODEL_NAME
+  name: MODEL_NAME-service
+  namespace: KUBEFLOW_NAMESPACE
+spec:
+  ports:
+  - name: grpc-tf-serving
+    port: 9000
+    targetPort: 9000
+  - name: http-tf-serving
+    port: 8500
+    targetPort: 8500
+  selector:
+    app: MODEL_NAME
+  type: LoadBalancer
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: MODEL_NAME
+  name: MODEL_NAME-v1
+  namespace: KUBEFLOW_NAMESPACE
+spec:
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "true"
+      labels:
+        app: MODEL_NAME
+        version: v1
+    spec:
+      containers:
+      - args:
+        - --port=9000
+        - --rest_api_port=8500
+        - --model_name=MODEL_NAME
+        - --model_base_path=MODEL_PATH
+        command:
+        - /usr/bin/tensorflow_model_server
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /secret/gcp-credentials/user-gcp-sa.json
+        image: TFSERVE_IMAGE
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          tcpSocket:
+            port: 9000
+        name: MODEL_NAME
+        ports:
+        - containerPort: 9000
+        - containerPort: 8500
+        resources:
+          limits:
+            cpu: "4"
+            memory: 4Gi
+            GPU_PLACEHOLDER
+          requests:
+            cpu: "1"
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /secret/gcp-credentials
+          name: gcp-credentials
+      volumes:
+      - name: gcp-credentials
+        secret:
+          secretName: user-gcp-sa
